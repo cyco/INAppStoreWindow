@@ -56,6 +56,30 @@
     NSRect bottomRect = NSMakeRect(0.0, NSMinY(drawingRect), NSWidth(drawingRect), 1.0);
     [bottomColor set];
     NSRectFill(bottomRect);
+	
+	
+	INAppStoreWindow* win = (INAppStoreWindow*)[self window];
+	if(win.titleBarString){
+		NSRect rect = NSMakeRect(0, [self frame].size.height-24, [self frame].size.width, 20);
+		
+		NSColor* textColor = [NSColor colorWithDeviceRed:0.0 green:0.0 blue:0.157 alpha:1.0];
+		NSShadow* shadow = [[[NSShadow alloc] init] autorelease];
+		[shadow setShadowBlurRadius:1.0];
+		[shadow setShadowOffset:NSMakeSize(0, -1)];
+		[shadow setShadowColor:[NSColor colorWithDeviceWhite:1.0 alpha:0.6]];
+		
+		NSFont* font = [[NSFontManager sharedFontManager] fontWithFamily:@"Lucida Grande" traits:0 weight:4.0 size:13.0];
+		NSMutableParagraphStyle* ps = [[[NSMutableParagraphStyle alloc] init] autorelease];
+		[ps setAlignment:NSCenterTextAlignment];
+		
+		NSMutableDictionary* attr = [NSMutableDictionary dictionary];
+		[attr setObject:ps forKey:NSParagraphStyleAttributeName];
+		[attr setObject:textColor forKey:NSForegroundColorAttributeName];
+		[attr setObject:shadow forKey:NSShadowAttributeName];
+		[attr setObject:font forKey:NSFontAttributeName];
+	
+		[win.titleBarString drawInRect:rect withAttributes:attr];	
+	}
 }
 
 // Uses code from NSBezierPath+PXRoundedRectangleAdditions by Andy Matuschak
@@ -74,6 +98,18 @@
     [path appendBezierPathWithArcWithCenter:NSMakePoint(NSMinX(rect), NSMaxY(rect)) radius:radius startAngle: 90.0 endAngle:180.0];
     [path closePath];
     return path;
+}
+#pragma mark -
+#pragma Moouse Events
+- (void)mouseDown:(NSEvent *)theEvent{
+	
+	NSWindow* win = [self window];
+	NSPoint startPos = [win convertBaseToScreen:[theEvent locationInWindow]];
+	NSPoint origin = win.frame.origin;
+    while ((theEvent=[win nextEventMatchingMask:(NSLeftMouseDraggedMask | NSLeftMouseUpMask)]) && theEvent && [theEvent type]!=NSLeftMouseUp){
+		NSPoint newPos = [win convertBaseToScreen:[theEvent locationInWindow]];
+		[win setFrameOrigin:NSMakePoint(origin.x + newPos.x-startPos.x, origin.y + newPos.y-startPos.y)];
+	}
 }
 @end
 
@@ -120,6 +156,45 @@
     return;
 }
 
+- (void)setContentSize:(NSSize)aSize{
+	float adjustment = self.titleBarHeight - 22;
+	if(adjustment > 0)
+		aSize.height += adjustment;
+	
+	[super setContentSize:aSize];
+	
+	
+	[self _recalculateFrameForTitleBarView];
+	[self _layoutTrafficLightsAndContent];
+	[self display];
+}
+ 
+- (void)setContentView:(NSView *)aView{
+	[super setContentView:aView];
+	
+	[self _recalculateFrameForTitleBarView];
+	[self _layoutTrafficLightsAndContent];
+	[self display];
+}
+
+- (NSRect)contentRectForFrameRect:(NSRect)frameRect{
+	NSRect rect = [super contentRectForFrameRect:frameRect];
+	
+	float adjustment = self.titleBarHeight - 22;
+	rect.size.height -= adjustment;
+	
+	return rect;
+}
+
+- (void)setFrame:(NSRect)frameRect display:(BOOL)flag{
+	if(!NSEqualSizes(frameRect.size, self.frame.size)){
+		float topPos = self.frame.origin.y + self.frame.size.height;
+		frameRect.origin.y = topPos-frameRect.size.height;
+	}
+	
+	[super setFrame:frameRect display:flag];
+}
+
 #pragma mark -
 #pragma mark Accessors
 
@@ -164,6 +239,30 @@
     return _titleBarHeight;
 }
         
+- (void)setTrafficLightAlignment:(int)trafficLightAlignment{
+	_trafficLightAlignment = trafficLightAlignment;
+	
+	[self _recalculateFrameForTitleBarView];
+    [self _layoutTrafficLightsAndContent];
+    [self display];
+}
+
+- (int)trafficLightAlignment{
+	return _trafficLightAlignment;
+}
+
+- (void)setTitleBarString:(NSString *)titleBarString{
+	[titleBarString retain];
+	[_titleBarString release];
+	
+	_titleBarString = [titleBarString copy];
+	[titleBarString release];
+	
+	[self display];
+}
+- (NSString*)titleBarString{
+	return _titleBarString;
+}
 #pragma mark -
 #pragma mark Private
 
@@ -171,7 +270,7 @@
 {
     // Calculate titlebar height
     _titleBarHeight = [self _minimumTitlebarHeight];
-    [self setMovableByWindowBackground:YES];
+    [self setMovableByWindowBackground:NO];
     /** -----------------------------------------
      - The window automatically does layout every time its moved or resized, which means that the traffic lights and content view get reset at the original positions, so we need to put them back in place
      - NSWindow is hardcoded to redraw the traffic lights in a specific rect, so when they are moved down, only part of the buttons get redrawn, causing graphical artifacts. Therefore, the window must be force redrawn every time it becomes key/resigns key
@@ -200,8 +299,29 @@
     NSRect closeFrame = [close frame];
     NSRect minimizeFrame = [minimize frame];
     NSRect zoomFrame = [zoom frame];
-    float buttonOrigin = floor(NSMidY([_titleBarView frame]) - (closeFrame.size.height / 2.0));
-    closeFrame.origin.y = buttonOrigin;
+    
+	
+	float buttonOrigin;
+	switch (_trafficLightAlignment) {
+		case 0:
+			buttonOrigin = [close frame].origin.y;
+			break;
+			
+		case 1:
+			buttonOrigin = floor(NSMidY([_titleBarView frame]) - (closeFrame.size.height / 2.0));
+			break;
+			
+		case 2:
+			buttonOrigin = floor(NSMinY([_titleBarView frame]) + (closeFrame.size.height / 2.0));
+			break;
+			
+		default:
+			buttonOrigin = floor(NSMidY([_titleBarView frame]) - (closeFrame.size.height / 2.0));
+			break;
+	}
+	
+	
+closeFrame.origin.y = buttonOrigin;
     minimizeFrame.origin.y = buttonOrigin;
     zoomFrame.origin.y = buttonOrigin;
     [close setFrame:closeFrame];
